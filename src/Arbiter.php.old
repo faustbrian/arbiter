@@ -1,0 +1,259 @@
+<?php declare(strict_types=1);
+
+/**
+ * Copyright (c) 2025 Cline
+ *
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ *
+ * @see https://github.com/cline/arbiter
+ */
+
+namespace Cline\Arbiter;
+
+use Cline\Arbiter\Exception\PolicyNotFoundException;
+
+/**
+ * Main policy evaluation engine for path-based access control.
+ */
+final class Arbiter
+{
+    /**
+     * @var array<string, Policy>
+     */
+    private array $policies = [];
+
+    /**
+     * Create a new Arbiter instance.
+     *
+     * @param iterable<Policy> $policies
+     */
+    public function __construct(iterable $policies = [])
+    {
+        foreach ($policies as $policy) {
+            $this->addPolicy($policy);
+        }
+    }
+
+    /**
+     * Add a policy to the arbiter.
+     */
+    public function addPolicy(Policy $policy): self
+    {
+        $this->policies[$policy->getName()] = $policy;
+
+        return $this;
+    }
+
+    /**
+     * Get a policy by name.
+     *
+     * @throws PolicyNotFoundException
+     */
+    public function getPolicy(string $name): Policy
+    {
+        if (! isset($this->policies[$name])) {
+            throw new PolicyNotFoundException("Policy not found: {$name}");
+        }
+
+        return $this->policies[$name];
+    }
+
+    /**
+     * Check if a policy exists.
+     */
+    public function hasPolicy(string $name): bool
+    {
+        return isset($this->policies[$name]);
+    }
+
+    /**
+     * Check if access is allowed.
+     *
+     * @param string|array<string> $policies Policy name(s) to check
+     * @param array<string, mixed> $context Variables and conditions context
+     */
+    public function can(
+        string|array $policies,
+        Capability $capability,
+        string $path,
+        array $context = [],
+    ): bool {
+        return $this->evaluate($policies, $capability, $path, $context)->isAllowed();
+    }
+
+    /**
+     * Get detailed evaluation result.
+     *
+     * @param string|array<string> $policies Policy name(s) to check
+     * @param array<string, mixed> $context Variables and conditions context
+     */
+    public function evaluate(
+        string|array $policies,
+        Capability $capability,
+        string $path,
+        array $context = [],
+    ): EvaluationResult {
+        $policyNames = \is_array($policies) ? $policies : [$policies];
+        $policiesToEvaluate = [];
+
+        // Collect all policies
+        foreach ($policyNames as $name) {
+            if (! $this->hasPolicy($name)) {
+                throw new PolicyNotFoundException("Policy not found: {$name}");
+            }
+
+            $policiesToEvaluate[] = $this->getPolicy($name);
+        }
+
+        // Collect all matching rules from all policies
+        $matchingRules = [];
+
+        foreach ($policiesToEvaluate as $policy) {
+            foreach ($policy->getRules() as $rule) {
+                if (! $rule->matchesPath($path, $context)) {
+                    continue;
+                }
+
+                if (! $rule->conditionsSatisfied($context)) {
+                    continue;
+                }
+
+                // Deny rules don't need capability check
+                if ($rule->getEffect() === Effect::Deny) {
+                    $matchingRules[] = ['rule' => $rule, 'policy' => $policy, 'specificity' => $this->calculateSpecificity($rule->getPath())];
+
+                    continue;
+                }
+
+                // Allow rules need capability check
+                if ($rule->hasCapability($capability)) {
+                    $matchingRules[] = ['rule' => $rule, 'policy' => $policy, 'specificity' => $this->calculateSpecificity($rule->getPath())];
+                }
+            }
+        }
+
+        // No matching rules = implicit deny
+        if ($matchingRules === []) {
+            return EvaluationResult::denied(
+                'No matching rule found',
+                $policiesToEvaluate,
+            );
+        }
+
+        // Sort by specificity (most specific first)
+        \usort($matchingRules, static fn (array $a, array $b): int => $b['specificity'] <=> $a['specificity']);
+
+        // Check for explicit deny (deny always wins)
+        foreach ($matchingRules as $match) {
+            if ($match['rule']->getEffect() === Effect::Deny) {
+                return EvaluationResult::explicitlyDenied(
+                    $match['rule'],
+                    $match['policy'],
+                    $policiesToEvaluate,
+                );
+            }
+        }
+
+        // First allow rule wins
+        $match = $matchingRules[0];
+
+        return EvaluationResult::allowed(
+            $match['rule'],
+            $match['policy'],
+            $policiesToEvaluate,
+        );
+    }
+
+    /**
+     * Get all accessible path patterns for a policy.
+     *
+     * @param string|array<string> $policies Policy name(s) to check
+     *
+     * @return array<string>
+     */
+    public function listAccessiblePaths(
+        string|array $policies,
+        Capability $capability,
+    ): array {
+        $policyNames = \is_array($policies) ? $policies : [$policies];
+        $paths = [];
+
+        foreach ($policyNames as $name) {
+            $policy = $this->getPolicy($name);
+
+            foreach ($policy->getRules() as $rule) {
+                if ($rule->getEffect() === Effect::Allow && $rule->hasCapability($capability)) {
+                    $paths[] = $rule->getPath();
+                }
+            }
+        }
+
+        return \array_unique($paths);
+    }
+
+    /**
+     * Get capabilities for a specific path.
+     *
+     * @param string|array<string> $policies Policy name(s) to check
+     * @param array<string, mixed> $context Variables and conditions context
+     *
+     * @return array<Capability>
+     */
+    public function getCapabilities(
+        string|array $policies,
+        string $path,
+        array $context = [],
+    ): array {
+        $policyNames = \is_array($policies) ? $policies : [$policies];
+        $capabilities = [];
+
+        foreach ($policyNames as $name) {
+            $policy = $this->getPolicy($name);
+
+            foreach ($policy->getRules() as $rule) {
+                if (! $rule->matchesPath($path, $context)) {
+                    continue;
+                }
+
+                if (! $rule->conditionsSatisfied($context)) {
+                    continue;
+                }
+
+                if ($rule->getEffect() === Effect::Allow) {
+                    foreach ($rule->getCapabilities() as $cap) {
+                        $capabilities[$cap->value] = $cap;
+                    }
+                }
+            }
+        }
+
+        return \array_values($capabilities);
+    }
+
+    /**
+     * Calculate specificity score for a path pattern.
+     * Higher score = more specific.
+     */
+    private function calculateSpecificity(string $pattern): int
+    {
+        // Glob wildcard gets lowest priority
+        if (\str_contains($pattern, '**')) {
+            return 1;
+        }
+
+        // Count path segments and wildcards
+        $segments = \explode('/', \trim($pattern, '/'));
+        $wildcards = 0;
+
+        foreach ($segments as $segment) {
+            if ($segment === '*' || \str_contains($segment, '${')) {
+                ++$wildcards;
+            }
+        }
+
+        // More segments = more specific
+        // Fewer wildcards = more specific
+        return \count($segments) - $wildcards;
+    }
+}

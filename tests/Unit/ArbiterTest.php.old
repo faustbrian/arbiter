@@ -1,0 +1,532 @@
+<?php declare(strict_types=1);
+
+/**
+ * Copyright (c) 2025 Cline
+ *
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ *
+ * @see https://github.com/cline/arbiter
+ */
+
+use Cline\Arbiter\Arbiter;
+use Cline\Arbiter\Capability;
+use Cline\Arbiter\Exception\PolicyNotFoundException;
+use Cline\Arbiter\Policy;
+use Cline\Arbiter\Rule;
+
+describe('Basic matching', function () {
+    test('exact path matches', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/bar')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/baz'))->toBeFalse();
+    });
+
+    test('single wildcard matches one segment', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar/baz'))->toBeFalse();
+    });
+
+    test('glob wildcard matches multiple segments', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar/baz'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar/baz/qux'))->toBeTrue();
+    });
+
+    test('evaluate() returns same result as can()', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/bar')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/bar');
+        expect($result->isAllowed())->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBe($result->isAllowed());
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/baz');
+        expect($result->isAllowed())->toBeFalse();
+        expect($arbiter->can('test', Capability::Read, '/foo/baz'))->toBe($result->isAllowed());
+    });
+});
+
+describe('Deny rules', function () {
+    test('explicit deny overrides allow', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/secret'));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/secret'))->toBeFalse();
+    });
+
+    test('explicit deny is indicated in evaluation result', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/secret'));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/secret');
+        expect($result->isDenied())->toBeTrue();
+        expect($result->isExplicitDeny())->toBeTrue();
+        expect($result->getMatchedRule())->not->toBeNull();
+    });
+
+    test('no matching rule is implicit deny', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/bar')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/baz');
+        expect($result->isDenied())->toBeTrue();
+        expect($result->isExplicitDeny())->toBeFalse();
+        expect($result->getMatchedRule())->toBeNull();
+    });
+});
+
+describe('Variables', function () {
+    test('variables are substituted from context', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/customers/${customer_id}/**')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $context = ['customer_id' => 'cust-123'];
+
+        expect($arbiter->can('test', Capability::Read, '/customers/cust-123/data', $context))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/customers/cust-456/data', $context))->toBeFalse();
+    });
+
+    test('variables work with evaluate()', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/customers/${customer_id}/**')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $context = ['customer_id' => 'cust-123'];
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/customers/cust-123/data', $context);
+        expect($result->isAllowed())->toBeTrue();
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/customers/cust-456/data', $context);
+        expect($result->isAllowed())->toBeFalse();
+    });
+
+    test('multiple variables can be substituted', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/customers/${customer_id}/orders/${order_id}')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        $context = ['customer_id' => 'cust-123', 'order_id' => 'ord-456'];
+
+        expect($arbiter->can('test', Capability::Read, '/customers/cust-123/orders/ord-456', $context))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/customers/cust-123/orders/ord-999', $context))->toBeFalse();
+    });
+});
+
+describe('Conditions', function () {
+    test('conditions must be satisfied', function () {
+        $policy = Policy::create('test')
+            ->addRule(
+                Rule::allow('/foo/*')
+                    ->capabilities(Capability::Read)
+                    ->when('environment', 'production')
+            );
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar', ['environment' => 'production']))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar', ['environment' => 'staging']))->toBeFalse();
+    });
+
+    test('conditions work with evaluate()', function () {
+        $policy = Policy::create('test')
+            ->addRule(
+                Rule::allow('/foo/*')
+                    ->capabilities(Capability::Read)
+                    ->when('environment', 'production')
+            );
+
+        $arbiter = new Arbiter([$policy]);
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/bar', ['environment' => 'production']);
+        expect($result->isAllowed())->toBeTrue();
+
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/bar', ['environment' => 'staging']);
+        expect($result->isAllowed())->toBeFalse();
+    });
+
+    test('multiple conditions must all be satisfied', function () {
+        $policy = Policy::create('test')
+            ->addRule(
+                Rule::allow('/foo/*')
+                    ->capabilities(Capability::Read)
+                    ->when('environment', 'production')
+                    ->when('region', 'us-east-1')
+            );
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar', [
+            'environment' => 'production',
+            'region' => 'us-east-1',
+        ]))->toBeTrue();
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar', [
+            'environment' => 'production',
+            'region' => 'us-west-1',
+        ]))->toBeFalse();
+    });
+});
+
+describe('Capabilities', function () {
+    test('capability must be present in rule', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Update, '/foo/bar'))->toBeFalse();
+    });
+
+    test('admin capability implies all others', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Admin));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Update, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Delete, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Create, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::List, '/foo/bar'))->toBeTrue();
+    });
+
+    test('multiple capabilities can be granted', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read, Capability::Update));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Update, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Delete, '/foo/bar'))->toBeFalse();
+    });
+});
+
+describe('Multiple policies', function () {
+    test('multiple policies are combined', function () {
+        $base = Policy::create('base')
+            ->addRule(Rule::allow('/shared/*')->capabilities(Capability::Read));
+
+        $specific = Policy::create('specific')
+            ->addRule(Rule::allow('/service/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$base, $specific]);
+
+        // Can check multiple policies at once
+        expect($arbiter->can(['base', 'specific'], Capability::Read, '/shared/config'))->toBeTrue();
+        expect($arbiter->can(['base', 'specific'], Capability::Read, '/service/data'))->toBeTrue();
+    });
+
+    test('any policy allowing grants access', function () {
+        $policy1 = Policy::create('policy1')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $policy2 = Policy::create('policy2')
+            ->addRule(Rule::allow('/bar/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy1, $policy2]);
+
+        // Either policy can grant access
+        expect($arbiter->can(['policy1', 'policy2'], Capability::Read, '/foo/data'))->toBeTrue();
+        expect($arbiter->can(['policy1', 'policy2'], Capability::Read, '/bar/data'))->toBeTrue();
+        expect($arbiter->can(['policy1', 'policy2'], Capability::Read, '/baz/data'))->toBeFalse();
+    });
+
+    test('explicit deny in any policy overrides allow', function () {
+        $allowPolicy = Policy::create('allow')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read));
+
+        $denyPolicy = Policy::create('deny')
+            ->addRule(Rule::deny('/foo/secret'));
+
+        $arbiter = new Arbiter([$allowPolicy, $denyPolicy]);
+
+        expect($arbiter->can(['allow', 'deny'], Capability::Read, '/foo/bar'))->toBeTrue();
+        expect($arbiter->can(['allow', 'deny'], Capability::Read, '/foo/secret'))->toBeFalse();
+    });
+});
+
+describe('Specificity', function () {
+    test('more specific rules take precedence', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/bar/*'));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/baz'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar/secret'))->toBeFalse();
+    });
+
+    test('exact path is more specific than single wildcard', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/bar'));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/baz'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar'))->toBeFalse();
+    });
+
+    test('single wildcard is more specific than glob', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/bar/*'));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect($arbiter->can('test', Capability::Read, '/foo/baz/qux'))->toBeTrue();
+        expect($arbiter->can('test', Capability::Read, '/foo/bar/secret'))->toBeFalse();
+    });
+});
+
+describe('Evaluation result', function () {
+    test('evaluation result provides details', function () {
+        $policy = Policy::create('test')
+            ->addRule(
+                Rule::allow('/foo/*')
+                    ->capabilities(Capability::Read)
+                    ->description('Allow read on foo')
+            );
+
+        $arbiter = new Arbiter([$policy]);
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/bar');
+
+        expect($result->isAllowed())->toBeTrue();
+        expect($result->getMatchedRule()->getDescription())->toBe('Allow read on foo');
+        expect($result->getMatchedPolicy()->getName())->toBe('test');
+    });
+
+    test('evaluation result includes all evaluated policies', function () {
+        $policy1 = Policy::create('policy1')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $policy2 = Policy::create('policy2')
+            ->addRule(Rule::allow('/bar/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy1, $policy2]);
+        $result = $arbiter->evaluate(['policy1', 'policy2'], Capability::Read, '/foo/data');
+
+        expect($result->getEvaluatedPolicies())->toHaveCount(2);
+        expect($result->getEvaluatedPolicies()[0]->getName())->toBe('policy1');
+        expect($result->getEvaluatedPolicies()[1]->getName())->toBe('policy2');
+    });
+
+    test('evaluation result has reason for denial', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+        $result = $arbiter->evaluate('test', Capability::Read, '/bar/baz');
+
+        expect($result->isDenied())->toBeTrue();
+        expect($result->getReason())->toBe('No matching rule found');
+    });
+
+    test('evaluation result indicates explicit deny', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/**')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/secret'));
+
+        $arbiter = new Arbiter([$policy]);
+        $result = $arbiter->evaluate('test', Capability::Read, '/foo/secret');
+
+        expect($result->isDenied())->toBeTrue();
+        expect($result->isExplicitDeny())->toBeTrue();
+        expect($result->getReason())->toBe('Explicitly denied by rule');
+    });
+});
+
+describe('listAccessiblePaths()', function () {
+    test('returns all accessible paths for a capability', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read))
+            ->addRule(Rule::allow('/bar/**')->capabilities(Capability::Read))
+            ->addRule(Rule::allow('/baz/qux')->capabilities(Capability::Update));
+
+        $arbiter = new Arbiter([$policy]);
+        $paths = $arbiter->listAccessiblePaths('test', Capability::Read);
+
+        expect($paths)->toContain('/foo/*');
+        expect($paths)->toContain('/bar/**');
+        expect($paths)->not->toContain('/baz/qux');
+    });
+
+    test('works with multiple policies', function () {
+        $policy1 = Policy::create('policy1')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $policy2 = Policy::create('policy2')
+            ->addRule(Rule::allow('/bar/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy1, $policy2]);
+        $paths = $arbiter->listAccessiblePaths(['policy1', 'policy2'], Capability::Read);
+
+        expect($paths)->toContain('/foo/*');
+        expect($paths)->toContain('/bar/*');
+    });
+
+    test('excludes deny rules', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read))
+            ->addRule(Rule::deny('/foo/secret'));
+
+        $arbiter = new Arbiter([$policy]);
+        $paths = $arbiter->listAccessiblePaths('test', Capability::Read);
+
+        expect($paths)->toContain('/foo/*');
+        expect($paths)->not->toContain('/foo/secret');
+    });
+
+    test('includes paths for admin capability', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Admin));
+
+        $arbiter = new Arbiter([$policy]);
+        $paths = $arbiter->listAccessiblePaths('test', Capability::Read);
+
+        expect($paths)->toContain('/foo/*');
+    });
+});
+
+describe('getCapabilities()', function () {
+    test('returns capabilities for a specific path', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/bar')->capabilities(Capability::Read, Capability::Update));
+
+        $arbiter = new Arbiter([$policy]);
+        $capabilities = $arbiter->getCapabilities('test', '/foo/bar');
+
+        expect($capabilities)->toHaveCount(2);
+        expect($capabilities)->toContain(Capability::Read);
+        expect($capabilities)->toContain(Capability::Update);
+    });
+
+    test('works with wildcards', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+        $capabilities = $arbiter->getCapabilities('test', '/foo/bar');
+
+        expect($capabilities)->toHaveCount(1);
+        expect($capabilities)->toContain(Capability::Read);
+    });
+
+    test('combines capabilities from multiple rules', function () {
+        $policy = Policy::create('test')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read))
+            ->addRule(Rule::allow('/foo/bar')->capabilities(Capability::Update));
+
+        $arbiter = new Arbiter([$policy]);
+        $capabilities = $arbiter->getCapabilities('test', '/foo/bar');
+
+        expect($capabilities)->toHaveCount(2);
+        expect($capabilities)->toContain(Capability::Read);
+        expect($capabilities)->toContain(Capability::Update);
+    });
+
+    test('works with multiple policies', function () {
+        $policy1 = Policy::create('policy1')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $policy2 = Policy::create('policy2')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Update));
+
+        $arbiter = new Arbiter([$policy1, $policy2]);
+        $capabilities = $arbiter->getCapabilities(['policy1', 'policy2'], '/foo/bar');
+
+        expect($capabilities)->toHaveCount(2);
+        expect($capabilities)->toContain(Capability::Read);
+        expect($capabilities)->toContain(Capability::Update);
+    });
+
+    test('respects conditions', function () {
+        $policy = Policy::create('test')
+            ->addRule(
+                Rule::allow('/foo/*')
+                    ->capabilities(Capability::Read)
+                    ->when('environment', 'production')
+            );
+
+        $arbiter = new Arbiter([$policy]);
+
+        $capabilities = $arbiter->getCapabilities('test', '/foo/bar', ['environment' => 'production']);
+        expect($capabilities)->toHaveCount(1);
+
+        $capabilities = $arbiter->getCapabilities('test', '/foo/bar', ['environment' => 'staging']);
+        expect($capabilities)->toHaveCount(0);
+    });
+});
+
+describe('Exception handling', function () {
+    test('throws exception on missing policy for can()', function () {
+        $arbiter = new Arbiter([]);
+
+        expect(fn () => $arbiter->can('nonexistent', Capability::Read, '/foo/bar'))
+            ->toThrow(PolicyNotFoundException::class, 'Policy not found: nonexistent');
+    });
+
+    test('throws exception on missing policy for evaluate()', function () {
+        $arbiter = new Arbiter([]);
+
+        expect(fn () => $arbiter->evaluate('nonexistent', Capability::Read, '/foo/bar'))
+            ->toThrow(PolicyNotFoundException::class, 'Policy not found: nonexistent');
+    });
+
+    test('throws exception when one of multiple policies is missing', function () {
+        $policy = Policy::create('exists')
+            ->addRule(Rule::allow('/foo/*')->capabilities(Capability::Read));
+
+        $arbiter = new Arbiter([$policy]);
+
+        expect(fn () => $arbiter->can(['exists', 'nonexistent'], Capability::Read, '/foo/bar'))
+            ->toThrow(PolicyNotFoundException::class, 'Policy not found: nonexistent');
+    });
+
+    test('throws exception on missing policy for listAccessiblePaths()', function () {
+        $arbiter = new Arbiter([]);
+
+        expect(fn () => $arbiter->listAccessiblePaths('nonexistent', Capability::Read))
+            ->toThrow(PolicyNotFoundException::class, 'Policy not found: nonexistent');
+    });
+
+    test('throws exception on missing policy for getCapabilities()', function () {
+        $arbiter = new Arbiter([]);
+
+        expect(fn () => $arbiter->getCapabilities('nonexistent', '/foo/bar'))
+            ->toThrow(PolicyNotFoundException::class, 'Policy not found: nonexistent');
+    });
+});

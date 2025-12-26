@@ -1,0 +1,70 @@
+{
+    "name": "cline/arbiter",
+    "description": "Path-based policy evaluation engine for PHP",
+    "license": "MIT",
+    "keywords": [
+        "authorization",
+        "access-control",
+        "policy",
+        "acl",
+        "permissions",
+        "rbac",
+        "path-based"
+    ],
+    "authors": [
+        {
+            "name": "Brian Faust",
+            "email": "brian@cline.sh"
+        }
+    ],
+    "require": {
+        "php": "^8.4.0",
+        "cline/variable-keys": "^1.1"
+    },
+    "require-dev": {
+        "cline/coding-standard": "^1.5.8",
+        "orchestra/testbench": "^10.8",
+        "symfony/var-dumper": "^7.4.0",
+        "symfony/yaml": "^7.4"
+    },
+    "suggest": {
+        "ext-pdo": "Required for DatabaseRepository",
+        "psr/simple-cache": "Required for CachedRepository",
+        "symfony/yaml": "Required for YamlRepository"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "autoload": {
+        "psr-4": {
+            "Cline\\Arbiter\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "ergebnis/composer-normalize": true,
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "lint": "vendor/bin/ecs check --fix",
+        "refactor": "rector",
+        "test": [
+            "@test:lint",
+            "@test:type-coverage",
+            "@test:unit",
+            "@test:types",
+            "@test:refactor"
+        ],
+        "test:lint": "vendor/bin/ecs check",
+        "test:refactor": "rector --dry-run",
+        "test:type-coverage": "pest --parallel --min=88 --type-coverage",
+        "test:types": "phpstan",
+        "test:unit": "pest --parallel --min=88 --coverage"
+    }
+}

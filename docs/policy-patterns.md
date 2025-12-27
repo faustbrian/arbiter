@@ -1,8 +1,3 @@
----
-title: Policy Patterns
-description: Common patterns and best practices for designing effective access control policies with Arbiter.
----
-
 This guide covers common policy patterns and best practices for designing effective access control with Arbiter.
 
 ## Pattern: Hierarchical Resource Access

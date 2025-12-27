@@ -1,8 +1,3 @@
----
-title: Advanced Usage
-description: Advanced Arbiter features including policy repositories, evaluation results, and custom implementations.
----
-
 This guide covers advanced features of Arbiter including policy repositories, detailed evaluation results, and custom implementations.
 
 ## Policy Repositories

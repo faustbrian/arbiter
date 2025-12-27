@@ -1,8 +1,3 @@
----
-title: Real-World Examples
-description: Complete real-world examples of using Arbiter for credential vaults, file systems, API authorization, and more.
----
-
 This guide provides complete, production-ready examples of using Arbiter for common use cases.
 
 ## Credential Vault Access Control

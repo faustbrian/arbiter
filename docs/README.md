@@ -1,8 +1,3 @@
----
-title: Getting Started
-description: Install, configure, and start using Arbiter for path-based policy evaluation and access control in your PHP application.
----
-
 Welcome to Arbiter, a framework-agnostic policy evaluation engine for hierarchical path-based access control. This guide will help you install, configure, and start using Arbiter in your application.
 
 ## What is Arbiter?

@@ -19,6 +19,8 @@ use Cline\VariableKeys\Facades\VariableKeys;
 use Illuminate\Support\ServiceProvider;
 use Override;
 
+use function config;
+
 /**
  * Laravel service provider for Arbiter policy evaluation system.
  *
@@ -77,12 +79,14 @@ final class ArbiterServiceProvider extends ServiceProvider
      * Registers models with the VariableKeys package to handle
      * the configured primary key strategy across all models.
      */
-    #[Override()]
     public function boot(): void
     {
+        /** @var int|string $primaryKeyType */
+        $primaryKeyType = config('arbiter.primary_key_type', 'id');
+
         VariableKeys::map([
             Policy::class => [
-                'primary_key_type' => PrimaryKeyType::from(config('arbiter.primary_key_type', 'id')),
+                'primary_key_type' => PrimaryKeyType::from($primaryKeyType),
             ],
         ]);
     }

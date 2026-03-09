@@ -1,9 +1,9 @@
 ## Table of Contents
 
-1. [Getting Started](#doc-docs-readme) (`docs/README.md`)
-2. [Advanced Usage](#doc-docs-advanced-usage) (`docs/advanced-usage.md`)
-3. [Examples](#doc-docs-examples) (`docs/examples.md`)
-4. [Policy Patterns](#doc-docs-policy-patterns) (`docs/policy-patterns.md`)
+1. [Getting Started](#doc-docs-readme)
+2. [Advanced Usage](#doc-docs-advanced-usage)
+3. [Examples](#doc-docs-examples)
+4. [Policy Patterns](#doc-docs-policy-patterns)
 <a id="doc-docs-readme"></a>
 
 Welcome to Arbiter, a framework-agnostic policy evaluation engine for hierarchical path-based access control. This guide will help you install, configure, and start using Arbiter in your application.

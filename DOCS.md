@@ -1,9 +1,11 @@
 ## Table of Contents
 
-1. Getting Started (`docs/README.md`)
-2. Advanced Usage (`docs/advanced-usage.md`)
-3. Examples (`docs/examples.md`)
-4. Policy Patterns (`docs/policy-patterns.md`)
+1. [Getting Started](#doc-docs-readme) (`docs/README.md`)
+2. [Advanced Usage](#doc-docs-advanced-usage) (`docs/advanced-usage.md`)
+3. [Examples](#doc-docs-examples) (`docs/examples.md`)
+4. [Policy Patterns](#doc-docs-policy-patterns) (`docs/policy-patterns.md`)
+<a id="doc-docs-readme"></a>
+
 Welcome to Arbiter, a framework-agnostic policy evaluation engine for hierarchical path-based access control. This guide will help you install, configure, and start using Arbiter in your application.
 
 ## What is Arbiter?
@@ -290,6 +292,8 @@ Arbiter is perfect for:
 4. **Multi-Tenant Apps** - Tenant-scoped resource access
 5. **Feature Flags** - Path-based feature toggles
 6. **CMS/Content** - Hierarchical content permissions
+
+<a id="doc-docs-advanced-usage"></a>
 
 This guide covers advanced features of Arbiter including policy repositories, detailed evaluation results, and custom implementations.
 
@@ -830,6 +834,8 @@ try {
     logger()->error("Invalid policy: {$e->getMessage()}");
 }
 ```
+
+<a id="doc-docs-examples"></a>
 
 This guide provides complete, production-ready examples of using Arbiter for common use cases.
 
@@ -1510,6 +1516,8 @@ $cmsPolicy = Policy::create('cms')
 ```
 
 These examples demonstrate how Arbiter can be used to implement robust, flexible access control across different application types while maintaining clean, testable code.
+
+<a id="doc-docs-policy-patterns"></a>
 
 This guide covers common policy patterns and best practices for designing effective access control with Arbiter.
 

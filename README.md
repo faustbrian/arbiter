@@ -19,13 +19,13 @@ composer require cline/arbiter
 
 ## Documentation
 
-- **[Getting Started](cookbook/getting-started.md)** - Installation, configuration, and basic concepts
-- **[Policies and Rules](cookbook/policies-and-rules.md)** - Creating and managing access control policies
-- **[Capabilities](cookbook/capabilities.md)** - Read, Write, Delete, and Admin capabilities
-- **[Path Patterns](cookbook/path-patterns.md)** - Wildcard matching and path-based access control
-- **[Conditions](cookbook/conditions.md)** - Context-aware authorization rules
-- **[Evaluation](cookbook/evaluation.md)** - Checking permissions and evaluating access
-- **[Advanced Usage](cookbook/advanced-usage.md)** - Specificity, repositories, and advanced patterns
+- **[Getting Started](DOCS.md#doc-docs-readme)** - Installation, configuration, and basic concepts
+- **[Policies and Rules](DOCS.md)** - Creating and managing access control policies
+- **[Capabilities](DOCS.md)** - Read, Write, Delete, and Admin capabilities
+- **[Path Patterns](DOCS.md)** - Wildcard matching and path-based access control
+- **[Conditions](DOCS.md)** - Context-aware authorization rules
+- **[Evaluation](DOCS.md)** - Checking permissions and evaluating access
+- **[Advanced Usage](DOCS.md#doc-docs-advanced-usage)** - Specificity, repositories, and advanced patterns
 
 ## Change log
 

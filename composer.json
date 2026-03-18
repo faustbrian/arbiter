@@ -24,8 +24,8 @@
     "require-dev": {
         "cline/coding-standard": "^2.0.1",
         "orchestra/testbench": "^10.9",
-        "symfony/var-dumper": "^7.4.6",
-        "symfony/yaml": "^7.4.6"
+        "symfony/var-dumper": "^7.4.6 || ^8.0",
+        "symfony/yaml": "^7.4.6 || ^8.0"
     },
     "suggest": {
         "ext-pdo": "Required for DatabaseRepository",
